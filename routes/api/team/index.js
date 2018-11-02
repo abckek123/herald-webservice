@@ -7,59 +7,114 @@ const crypto = require('crypto')
  */
 exports.route = {
 
-  async get({ page = 1, pagesize = 10, own = false }) {
-    
-    let now = +moment()
-    let amount = await db.team.count('*', { expireTime: {$lt: now} }) // 获取当前未过期的队伍总数
-    let { cardnum } = this.user
+  async get({type,page=0}){
 
-    let teams
+    let pageSize=6;
+    if(type==0){
 
-    if (own) {
-        teams = await db.team.find({ expireTime: {$lt: now} , organizer: cardnum}, 
-            pagesize, (page - 1) * pagesize, 'updateTime')
-    } else {
-        teams = await db.team.find({ expireTime: {$lt: now} }, 
-            pagesize, (page - 1) * pagesize, 'updateTime')
+      let data=await db.team.find({},pageSize,(page-1)*pageSize,'publishedDate');
+      return data;
+
+    }else if(type==1){
+
+      let {schoolNum}=this.user;
+      
+      let published=await db.team.find(
+        {schoolNum},
+        pageSize,(page-1)*pageSize,'publishedDate');
+
+      let requested=await db.registration.find(
+        {schoolNum},
+        pageSize,(page-1)*pageSize,'applicationDate');
+      
+      let tids=[].concat(published).map(eachColume=>eachColume.tid);
+
+      let received=await db.registration.find(
+        {tid:{$in:tids}},
+        pageSize,(page-1)*pageSize,'applicationDate');
+
+        return{published,requested,received};
     }
-    
-    return { amount, teams }
-
+    else{ 
+     throw 'unknown request type';
+    }
   },
+  
+  async post({ type , data }){
 
-  async post({ teamName, capacity, description, expireTime }) {
-    
-    let now = +moment()
+    if(type==1 && Object.keys(data).length==9 ){
+      let {schoolNum,teamName,deadLine} = data;
+      let count=await db.team.count('*',{schoolNum});
 
-    let { cardnum, name } = this.user
-    // 通过 队长一卡通号 队伍名称 队伍描述 生成时间 计算tid
-    let tid = crypto.createHash('sha256')
-    tid.update( teamName )
-    tid.update( description )
-    tid.update( '' + now ) 
-    tid.update( cardnum )
-    tid = tid.digest( 'hex' )
+      if(count==2){
+        throw '同时可发布数已达上限(两个)';
+      }
 
-    let success
+      let tid = crypto.createHash('sha256')
+                      .update( teamName )
+                      .update( deadLine ) 
+                      .update( schoolNum )
+                      .digest( 'hex' );
+      data.tid=tid;
+      data.currentPeople=schoolNum;
+      try{
+        db.team.insert(data);
+        return {status:0}
+      }
+      catch(e){
+        throw '队伍建立失败';
+      }
+      //==================
+    }else if(type==2 && Object.keys(data).length==7){
 
-    try {
-      await db.team.insert(
-            {
-              tid,
-              teamName,
-              capacity,
-              organizer: cardnum,
-              expireTime,
-              updateTime: now,
-              description
-            }
-        )
-        return '队伍建立成功'
-    } catch(e) {
-        throw '队伍建立失败'
-    }
+      let {tid,applicant,description}=data;
 
-    return { success }
+      let pid = crypto.createHash('sha256')
+                      .update( tid )
+                      .update( applicant ) 
+                      .update( description )
+                      .digest( 'hex' );
+
+      data.pid=pid;
+      data.status=0;
+      try{
+        db.registration.insert(data);
+        return {status:0};
+      }
+      catch(e){
+        throw "commit application failed"
+      }
+      //===================
+    }else if(type==3 && Object.keys(data).length==3){
+      let {rid,text,response}=data;
+
+      let regisContent=db.registration.find({rid});
+      if(regisContent.status!=0){
+        throw "reply failed";
+      }
+      let targetTeam=db.team.find({tid:regisContent.tid});
+      let currentPeople=targetTeam.currentPeople.splite(' ');
+      
+      if(currentPeople.length>=targetTeam.maxPeople){
+        throw "number of alias is up to limit";
+      }
+      try{
+        let updatedPeople=currentPeople+` ${this.user.schoolNum}`;
+        db.team.update({tid:regisContent.tid},
+          {currentPeople:updatedPeople});
+
+        let status=response?1:2;
+        db.registration.update({rid},
+          {status,updateTime:+moment(),responseText:response});
+
+        return {status:0}
+
+      }
+      catch(e){
+        throw "database exception"
+      }
+
+    }else throw 'unknown request type'
   },
 
   async put({ tid, capacity=0, description='' }) {
