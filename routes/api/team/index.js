@@ -6,13 +6,16 @@ const crypto = require('crypto')
  * /api/team 竞赛组队API
  */
 exports.route = {
-  async get({type,page=0}){
+  async get({type,page=1}){
+
+    if(page<=0)
+      throw "错误的页码";
 
     let pageSize=6;
     let offset=(page-1)*pageSize;
     if(type==1){
 
-      let data=await db.team.find({},pageSize,offset,'publishedDate');
+      let data=await db.team.find({status:{$ne:4}},pageSize,offset,'publishedDate');
       return data;
 
     }else if(type==2){
@@ -26,18 +29,19 @@ exports.route = {
       let requested=await db`
       SELECT r.*,t.teamName AS teamName,t.projectName AS projectName
       FROM registration r,team t
-      WHERE r.tid=t.tid AND r.status<>4
+      WHERE r.tid=t.tid AND r.cardnum=${cardnum} AND r.status<4
       ORDER BY applicationDate
       LIMIT ${pageSize} OFFSET ${offset}`;  
 
-      let tids=[].concat(published).map(eachColume=>eachColume.tid);
-
-      let received=await db`
+      
+      let tids=[].concat(published).map(eachColume=>`'${eachColume.tid}'`);
+      //使用模板字符串的查询无法正确处理 IN (数组) 的查询
+      let received=await db.raw(`
       SELECT r.*,t.teamName AS teamName,t.projectName AS projectName
       FROM registration r,team t
-      WHERE r.tid IN ${tids.map(i=>`'${i}`)} AND r.status<>4
+      WHERE r.tid=t.tid AND r.tid IN (${tids}) AND r.status<4
       ORDER BY applicationDate
-      LIMIT ${pageSize} OFFSET ${offset}`;
+      LIMIT ${pageSize} OFFSET ${offset}`);
 
       return{published,requested,received};
     }
@@ -71,6 +75,7 @@ exports.route = {
     data.currentPeople=cardnum;
     data.cardnum=cardnum;
     data.publishedDate=currentTime;
+    data.status=0;
     try{
       await db.team.insert(data);
       return {status:0}
@@ -102,7 +107,7 @@ exports.route = {
     }    
   },
 
-  async delete({tid}) {
+  async delete({tid,hard}) {
 
     let {cardnum}=this.user;
     let team = await db.team.find({ tid },1);
@@ -111,8 +116,14 @@ exports.route = {
       throw 403;
     }
     try{
+      if(hard){
+        await db.team.remove({tid},1);
+      }
+      else{
+        await db.team.update({tid},{status:4});
+      }
       await db.registration.update({ tid },{status:4});
-      await db.team.remove({tid},1);
+
       return{ status: 0}
     }
     catch(e){

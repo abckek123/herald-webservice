@@ -16,7 +16,8 @@ db.team = {
   maxPeople:   'int not null',
   deadLine:    'text not null',
   publishedDate:'text not null',
-  description: 'text not null'
+  description: 'text not null',
+  status:      'int not null' //0('normal'),1('out-of-date'),4('abandoned')
 }
 
 // 对更新时间进行索引
