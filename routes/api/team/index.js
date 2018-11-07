@@ -6,189 +6,117 @@ const crypto = require('crypto')
  * /api/team 竞赛组队API
  */
 exports.route = {
-
   async get({type,page=0}){
 
     let pageSize=6;
-    if(type==0){
+    let offset=(page-1)*pageSize;
+    if(type==1){
 
-      let data=await db.team.find({},pageSize,(page-1)*pageSize,'publishedDate');
+      let data=await db.team.find({},pageSize,offset,'publishedDate');
       return data;
 
-    }else if(type==1){
+    }else if(type==2){
 
-      let {schoolNum}=this.user;
+      let {cardnum}=this.user;
 
       let published=await db.team.find(
-        {schoolNum},
-        pageSize,(page-1)*pageSize,'publishedDate');
+        {cardnum},
+        pageSize,offset,'publishedDate');
 
-      let requested=await db.registration.find(
-        {schoolNum},
-        pageSize,(page-1)*pageSize,'applicationDate');
+      let requested=await db`
+      SELECT r.*,t.teamName AS teamName,t.projectName AS projectName
+      FROM registration r,team t
+      WHERE r.tid=t.tid AND r.status<>4
+      ORDER BY applicationDate
+      LIMIT ${pageSize} OFFSET ${offset}`;  
 
       let tids=[].concat(published).map(eachColume=>eachColume.tid);
 
-      let received=await db.registration.find(
-        {tid:{$in:tids}},
-        pageSize,(page-1)*pageSize,'applicationDate');
+      let received=await db`
+      SELECT r.*,t.teamName AS teamName,t.projectName AS projectName
+      FROM registration r,team t
+      WHERE r.tid IN ${tids.map(i=>`'${i}`)} AND r.status<>4
+      ORDER BY applicationDate
+      LIMIT ${pageSize} OFFSET ${offset}`;
 
-        return{published,requested,received};
+      return{published,requested,received};
     }
     else{
      throw 'unknown request type';
     }
   },
 
-  async post({ type , data }){
+  async post({teamName,deadLine}){
+    let data=this.params;
+    let {name,cardnum}=this.user;
 
-    let selfSchoolNum=this.user.schoolnum;
+    let count=await db.team.count('*',{cardnum});
+    let currentTime=moment().unix();
+    data.deadLine=moment(data.deadLine,"YYYY-MM-DD").unix();
 
-    if(type==1 && Object.keys(data).length==9 ){
-      let {schoolnum,teamName,deadLine} = data;
-      let count=await db.team.count('*',{schoolnum});
+    if(data.deadLine<currentTime){
+      throw "截止日期需超过今日";
+    }
+    if(count==2){
+      throw '同时可发布数已达上限(两个)';
+    }
 
-      if(count==2){
-        throw '同时可发布数已达上限(两个)';
-      }
-
-      let tid = crypto.createHash('sha256')
-                      .update( teamName )
-                      .update( deadLine )
-                      .update( schoolnum )
-                      .digest( 'hex' );
-      data.tid=tid;
-      data.currentPeople=schoolnum;
-      try{
-        db.team.insert(data);
-        return {status:0}
-      }
-      catch(e){
-        throw '数据库错误';
-      }
-      //==================新建申请==========
-    }else if(type==2 && Object.keys(data).length==7){
-
-      let {tid,applicant,description}=data;
-
-      let rid = crypto.createHash('sha256')
-                      .update( tid )
-                      .update( applicant )
-                      .update( description )
-                      .digest( 'hex' );
-
-      data.rid=rid;
-      data.status=0;
-      try{
-        db.registration.insert(data);
-        return {status:0};
-      }
-      catch(e){
-        throw "commit application failed"
-      }
-
-      //===================提交对申请者的回应============
-
-    }else if(type==3 && Object.keys(data).length==3){
-      let {rid,text,response}=data;
-
-      let regisContent=db.registration.find({rid});
-      if(regisContent.status!=0){
-        throw "reply failed";
-      }
-      let targetTeam=db.team.find({tid:regisContent.tid});
-      let currentPeople=targetTeam.currentPeople.split(' ');
-
-      if(currentPeople.length>=targetTeam.maxPeople){
-        throw "number of alias is up to limit";
-      }
-      try{
-        let updatedPeople=currentPeople+` ${selfSchoolNum}`;
-        db.team.update({tid:regisContent.tid},
-          {currentPeople:updatedPeople});
-
-        let status=response?1:2;
-        db.registration.update({rid},
-          {status,updateTime:+moment(),responseText:response});
-
-        return {status:0}
-
-      }
-      catch(e){
-        throw "数据库错误"
-      }
-
-    }else throw 'unknown request type'
+    data.tid = crypto.createHash('sha256')
+                    .update( teamName )
+                    .update( deadLine )
+                    .update( cardnum )
+                    .digest( 'hex' );
+    
+    data.masterName=name;               
+    data.currentPeople=cardnum;
+    data.cardnum=cardnum;
+    data.publishedDate=currentTime;
+    try{
+      await db.team.insert(data);
+      return {status:0}
+    }
+    catch(e){
+      throw '数据库错误';
+    }
   },
 
-  async put({ type , data }){
+  async put({tid}){
+    let data=this.params;
 
-    let selfSchoolNum=this.user.schoolnum;
+    let {cardnum}=this.user;
+    let targetTeam=await db.team.find({tid},1);
 
-    //================修改组队项===========
-    if(type==1 && data.tid){
-      let {tid}=data;
-      let target=db.team.find({tid});
+    if(targetTeam.cardnum!==cardnum)
+      throw 403;
+    if(targetTeam.currentPeople.split(' ').length>data.maxPeople)
+      throw '队内人数大于修改的目标值';
 
-      if(target.schoolnum!==selfSchoolNum)
-        throw 403;
-      if(target.currentPeople.split(' ').length<data.maxPeople)
-        throw 400;
-
-      try{
-        db.team.update({tid},data);
-        return {status:0}
-      }
-      catch(e){
-        throw '数据库错误';
-      }
-      //==================修改申请==========
-    }else if(type==2 && data.rid){
-
-      let {rid}=data;
-      let target=db.registration.find({rid});
-
-      if(target.schoolnum!==selfSchoolNum)
-        throw 403;
-      try{
-
-        db.registration.update({rid},data);
-        return {status:0};
-      }
-      catch(e){
-        throw "数据库错误";
-      }
-    }else throw 'unknown request type'
+    delete data.masterName;
+    delete data.cardnum;
+    try{
+      await db.team.update({tid},data);
+      return {status:0}
+    }
+    catch(e){
+      throw '数据库错误';
+    }    
   },
 
-  async delete({ type , tid , rid }) {
-    let {schoolnum:selfSchoolNum}=this.user;
-    if(type==1){
-      let team = await db.team.find({ tid });
-      if(selfSchoolNum!==team.schoolnum){
-        throw 403;
-      }
-      try{
-        await db.registration.update({ tid },{status:4});
-        await db.team.delete({tid});
-        return{ status: 0}
-      }
-      catch(e){
-        throw "数据库错误";
-      }
-    }else if(type==2){
-      let regis = await db.registration.find({ rid });
-      if(selfSchoolNum!==regis.schoolnum){
-        throw 403;
-      }
-      try{
-        await db.registration.update({rid},{status:4});
+  async delete({tid}) {
 
-        return{status:0}
-      }
-      catch(e){
-        throw "数据库错误";
-      }
-    }else throw "unknown request type";
+    let {cardnum}=this.user;
+    let team = await db.team.find({ tid },1);
+
+    if(cardnum!==team.cardnum){
+      throw 403;
+    }
+    try{
+      await db.registration.update({ tid },{status:4});
+      await db.team.remove({tid},1);
+      return{ status: 0}
+    }
+    catch(e){
+      throw "数据库错误";
+    }
   }
 }
