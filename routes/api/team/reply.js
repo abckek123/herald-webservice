@@ -11,7 +11,7 @@ exports.route = {
   async post({rid, text, response}) {
     let targetRegis = await db.registration.find({ rid}, 1);
     if (targetRegis.status != 0) {
-      throw "reply failed";
+      throw "回复失败";
     }
     let targetTeam = await db.team.find({ tid: targetRegis.tid}, 1);
     let currentPeople = targetTeam.currentPeople.split(' ');

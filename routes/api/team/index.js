@@ -6,7 +6,7 @@ const crypto = require('crypto')
  * /api/team 竞赛组队API
  */
 exports.route = {
-  async get({type,page=1}){
+  async get({type,page=1,param}){
 
     if(page<=0)
       throw "错误的页码";
@@ -15,8 +15,8 @@ exports.route = {
     let offset=(page-1)*pageSize;
     if(type==1){
 
-      let data=await db.team.find({status:{$ne:4}},pageSize,offset,'publishedDate');
-      return data;
+      let data=await db.team.find({status:{$lt:4}},pageSize,offset,'publishedDate');
+      return {data};
 
     }else if(type==2){
 
@@ -44,17 +44,22 @@ exports.route = {
       LIMIT ${pageSize} OFFSET ${offset}`);
 
       return{published,requested,received};
+    }else if(type==3){
+      param=JSON.parse(param);
+      param.status={$lt:4};
+      let data=await db.team.find(param,pageSize,offset,'publishedDate');
+      return {data};
     }
     else{
      throw 'unknown request type';
     }
   },
 
-  async post({teamName,deadLine}){
+  async post(){
     let data=this.params;
     let {name,cardnum}=this.user;
 
-    let count=await db.team.count('*',{cardnum});
+    let count=await db.team.count('*',{cardnum,status:{$lt:4}});
     let currentTime=moment().unix();
     data.deadLine=moment(data.deadLine,"YYYY-MM-DD").unix();
 
@@ -66,8 +71,8 @@ exports.route = {
     }
 
     data.tid = crypto.createHash('sha256')
-                    .update( teamName )
-                    .update( deadLine )
+                    .update( data.teamName )
+                    .update( data.projectName )
                     .update( cardnum )
                     .digest( 'hex' );
     
@@ -76,11 +81,15 @@ exports.route = {
     data.cardnum=cardnum;
     data.publishedDate=currentTime;
     data.status=0;
+    if(Object.keys(data).length!=11)
+      throw "错误的参数";
     try{
       await db.team.insert(data);
       return {status:0}
     }
     catch(e){
+      if(e.errno==19)
+        return {status:1};
       throw '数据库错误';
     }
   },
@@ -122,7 +131,7 @@ exports.route = {
       else{
         await db.team.update({tid},{status:4});
       }
-      await db.registration.update({ tid },{status:4});
+      await db.registration.update({ tid ,status:{$le:4}},{status:4});
 
       return{ status: 0}
     }

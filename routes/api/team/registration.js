@@ -30,6 +30,8 @@ exports.route = {
                     .update( cardnum )
                     .digest( 'hex' );
 
+    if(Object.keys(data).length!=9)
+      throw "错误的参数";
     try{
       await db.registration.insert(data);
       return {status:0};
@@ -37,7 +39,7 @@ exports.route = {
     catch(e){
       if(e.errno==19)
         return {status:1};
-      throw "commit application failed"
+      throw "提交申请失败"
     }
   },
 
@@ -48,9 +50,11 @@ exports.route = {
 
     let target=await db.registration.find({rid},1);
 
-    if(target.cardnum!==cardnum)
+    if(target.cardnum!==cardnum){
       throw 403;
+    }
     try{
+      delete data.tid;//以防修改组队项
       await db.registration.update({rid},data);
       return {status:0};
     }
@@ -67,6 +71,10 @@ exports.route = {
     if(cardnum!==regis.cardnum){
       throw 403;
     }
+    if(regis.status!==0){
+      throw "无法取消申请"
+    }
+
     try{
       await db.registration.update({rid},{status:4});
       return{status:0}
