@@ -1,53 +1,114 @@
-const { config } = require('../../../app')
-const db = require('../../../database/team')
 const crypto = require('crypto')
+const _db=require('../../../database/mongodb')
+
+//db.test.ensureIndex({"tid":1})
 
 /**
  * /api/team 竞赛组队API
  */
 exports.route = {
   async get({type,page=1,param}){
+    let _col_team=await _db('team');
+    let _col_regis=await _db('registration');
 
     if(page<=0)
       throw "错误的页码";
 
     let pageSize=6;
     let offset=(page-1)*pageSize;
-    if(type==1){
 
-      let data=await db.team.find({status:{$lt:4}},pageSize,offset,'publishedDate');
+    if(type==1){      
+      let data=await _col_team
+      .find({status:{$lt:4}})
+      .skip(offset)
+      .limit(pageSize)
+      .sort({'publishedDate':-1})
+      .map(x=>{delete x._id;return x;})
+      .toArray();
       return {data};
 
     }else if(type==2){
 
       let {cardnum}=this.user;
 
-      let published=await db.team.find(
-        {cardnum},
-        pageSize,offset,'publishedDate');
+      let published=await _col_team
+      .find({cardnum})
+      .skip(offset)
+      .limit(pageSize)
+      .sort({'publishedDate':-1})
+      .map(x=>{delete x._id;return x;})
+      .toArray();
 
-      let requested=await db`
-      SELECT r.*,t.teamName AS teamName,t.projectName AS projectName
-      FROM registration r,team t
-      WHERE r.tid=t.tid AND r.cardnum=${cardnum} AND r.status<4
-      ORDER BY applicationDate
-      LIMIT ${pageSize} OFFSET ${offset}`;  
-
+      let requested=await _col_regis
+      .aggregate([{
+        $match: {
+          cardnum
+        }
+       },{
+       $lookup:{
+         from:"team",
+         localField:'tid',
+         foreignField:'tid',
+         as:'team'}
+      }
+      ])
+      .skip(offset)
+      .limit(pageSize)
+      .sort({'applicationDate':-1})
+      .map(x=>{
+        delete x._id;
+        x.teamName=x.team[0].teamName;
+        x.projectName=x.team[0].projectName;
+        delete x.team;
+        return x;
+      })
+      .toArray();
       
-      let tids=[].concat(published).map(eachColume=>`'${eachColume.tid}'`);
-      //使用模板字符串的查询无法正确处理 IN (数组) 的查询
-      let received=await db.raw(`
-      SELECT r.*,t.teamName AS teamName,t.projectName AS projectName
-      FROM registration r,team t
-      WHERE r.tid=t.tid AND r.tid IN (${tids}) AND r.status<4
-      ORDER BY applicationDate
-      LIMIT ${pageSize} OFFSET ${offset}`);
+      let tids=published.map(eachColume=>eachColume.tid);
+      let received=await _col_regis
+      .aggregate([{
+        $match:{
+          status:{$lt:4},
+          tid:{$in:tids}
+        }
+      },{
+        $lookup: {
+          from: "team",
+          localField: 'tid',
+          foreignField: 'tid',
+          as: 'team'
+        }
+      }])
+      .skip(offset)
+      .limit(pageSize)
+      .sort({'applicationDate':-1})
+      .map(x=>{
+        delete x._id;
+        x.teamName=x.team[0].teamName;
+        x.projectName=x.team[0].projectName;
+        delete x.team;
+        return x;
+      })
+      .toArray();
 
       return{published,requested,received};
+
     }else if(type==3){
       param=JSON.parse(param);
       param.status={$lt:4};
-      let data=await db.team.find(param,pageSize,offset,'publishedDate');
+      let data=await _col_team
+      .find({status:{$lt:4},...param})
+      .skip(offset)
+      .limit(pageSize)
+      .sort({'publishedDate':-1})
+      .map(x=>{
+        delete x._id;
+        x.teamName=x.team[0].teamName;
+        x.projectName=x.team[0].projectName;
+        delete x.team;
+        return x;
+      })
+      .toArray();
       return {data};
     }
     else{
@@ -58,11 +119,15 @@ exports.route = {
   async post(){
     let data=this.params;
     let {name,cardnum}=this.user;
+    let _col_team=await _db('team');
 
-    let count=await db.team.count('*',{cardnum,status:{$lt:4}});
+    let count=await _col_team.countDocuments({cardnum,status:{$lt:4}});
     let currentTime=moment().unix();
     data.deadLine=moment(data.deadLine,"YYYY-MM-DD").unix();
 
+    if(isNaN(data.deadLine)){
+      throw "错误的日期";
+    }
     if(data.deadLine<currentTime){
       throw "截止日期需超过今日";
     }
@@ -73,42 +138,50 @@ exports.route = {
     data.tid = crypto.createHash('sha256')
                     .update( data.teamName )
                     .update( data.projectName )
+                    .update( `${data.deadLine}` )
                     .update( cardnum )
                     .digest( 'hex' );
     
     data.masterName=name;               
-    data.currentPeople=cardnum;
+    data.currentPeople=[{cardnum,name}];
     data.cardnum=cardnum;
     data.publishedDate=currentTime;
     data.status=0;
-    if(Object.keys(data).length!=11)
+
+    if(Object.keys(data).length!=12)
       throw "错误的参数";
     try{
-      await db.team.insert(data);
+      await _col_team.ensureIndex('tid',{unique:true});
+      await _col_team.insertOne(data);
       return {status:0}
     }
     catch(e){
-      if(e.errno==19)
+      if(e.code==11000)
         return {status:1};
       throw '数据库错误';
     }
   },
 
   async put({tid}){
+    let _col_team=await _db('team');
+
     let data=this.params;
 
     let {cardnum}=this.user;
-    let targetTeam=await db.team.find({tid},1);
+    let targetTeam=await _col_team.findOne({tid});
 
-    if(targetTeam.cardnum!==cardnum)
+    if(targetTeam.cardnum!==cardnum){
       throw 403;
-    if(targetTeam.currentPeople.split(' ').length>data.maxPeople)
+    }
+    if(targetTeam.currentPeople.length>data.maxPeople){
       throw '队内人数大于修改的目标值';
+    }
 
     delete data.masterName;
     delete data.cardnum;
     try{
-      await db.team.update({tid},data);
+      await _col_team.ensureIndex('tid',{unique:true});
+      await _col_team.updateOne({tid},{$set:data});
       return {status:0}
     }
     catch(e){
@@ -117,22 +190,25 @@ exports.route = {
   },
 
   async delete({tid,hard}) {
-
+    let _col_team=await _db('team');
+    let _col_regis=await _db('registration');
     let {cardnum}=this.user;
-    let team = await db.team.find({ tid },1);
+    let team = await _col_team.findOne({ tid });
 
+    if(!team){
+      throw "找不到队伍";
+    }
     if(cardnum!==team.cardnum){
       throw 403;
     }
     try{
-      if(hard){
-        await db.team.remove({tid},1);
+      if(hard==='true'){
+        await _col_team.removeOne({tid});
       }
       else{
-        await db.team.update({tid},{status:4});
+        await _col_team.updateOne({tid},{$set:{status:4}});
       }
-      await db.registration.update({ tid ,status:{$le:4}},{status:4});
-
+      await _col_regis.updateMany({ tid ,status:{$lt:4}},{$set:{status:4}});
       return{ status: 0}
     }
     catch(e){
