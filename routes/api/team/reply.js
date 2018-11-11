@@ -25,6 +25,8 @@ exports.route = {
         await _col_team.updateOne({tid: targetRegis.tid}, {$set:{currentPeople}});
       } else if(response==="false"){
         status = 2;
+      }else{
+        throw '错误的返回值';
       }
       await _col_regis.updateMany({rid}, {$set:{status,updateTime: moment().unix(),responseText: text}});
       return {status: 0}
