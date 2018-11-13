@@ -17,7 +17,7 @@ exports.route = {
     let pageSize=6;
     let offset=(page-1)*pageSize;
 
-    if(type==1){      
+    if(type==1){
       let data=await _col_team
       .find({status:{$lt:4}})
       .skip(offset)
@@ -57,13 +57,13 @@ exports.route = {
       .sort({'applicationDate':-1})
       .map(x=>{
         delete x._id;
-        x.teamName=x.team[0].teamName;
-        x.projectName=x.team[0].projectName;
+        x.teamName=x.team[0]?x.team[0].teamName:'队伍已被删除';
+        x.projectName=x.team[0]?x.team[0].projectName:'队伍已被删除';
         delete x.team;
         return x;
       })
       .toArray();
-      
+
       let tids=published.map(eachColume=>eachColume.tid);
       let received=await _col_regis
       .aggregate([{
@@ -141,8 +141,8 @@ exports.route = {
                     .update( `${data.deadLine}` )
                     .update( cardnum )
                     .digest( 'hex' );
-    
-    data.masterName=name;               
+
+    data.masterName=name;
     data.currentPeople=[{cardnum,name}];
     data.cardnum=cardnum;
     data.publishedDate=currentTime;
@@ -186,7 +186,7 @@ exports.route = {
     }
     catch(e){
       throw '数据库错误';
-    }    
+    }
   },
 
   async delete({tid,hard}) {
@@ -202,7 +202,7 @@ exports.route = {
       throw 403;
     }
     try{
-      if(hard==='true'){
+      if(typeof(hard)==='boolean'&&hard===true){
         await _col_team.removeOne({tid});
       }
       else{
