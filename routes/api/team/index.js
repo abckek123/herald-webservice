@@ -200,7 +200,7 @@ exports.route = {
     if(cardnum!==team.cardnum){
       throw 403;
     }
-    if(hard&&typeof(hard)!=="boolean"){
+    if(typeof(hard) !== "undefined"&&typeof(hard)!=="boolean"){
       throw '错误的请求参数';
     }
     try{
