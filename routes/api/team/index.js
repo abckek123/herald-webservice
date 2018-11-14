@@ -56,8 +56,8 @@ exports.route = {
       .sort({'applicationDate':-1})
       .map(x=>{
         delete x._id;
-        x.teamName=x.team?x.team[0].teamName:'队伍不存在或已被删除';
-        x.projectName=x.team?x.team[0].projectName:'队伍不存在或已被删除';
+        x.teamName=x.team[0]?x.team[0].teamName:'队伍不存在或已被删除';
+        x.projectName=x.team[0]?x.team[0].projectName:'队伍不存在或已被删除';
         delete x.team;
         return x;
       })
@@ -83,8 +83,8 @@ exports.route = {
       .sort({'applicationDate':-1})
       .map(x=>{
         delete x._id;
-        x.teamName=x.team?x.team[0].teamName:'队伍不存在或已被删除';
-        x.projectName=x.team?x.team[0].projectName:'队伍不存在或已被删除';
+        x.teamName=x.team[0]?x.team[0].teamName:'队伍不存在或已被删除';
+        x.projectName=x.team[0]?x.team[0].projectName:'队伍不存在或已被删除';
         delete x.team;
         return x;
       })
@@ -102,9 +102,6 @@ exports.route = {
       .sort({'publishedDate':-1})
       .map(x=>{
         delete x._id;
-        x.teamName=x.team?x.team[0].teamName:'队伍不存在或已被删除';
-        x.projectName=x.team?x.team[0].projectName:'队伍不存在或已被删除';
-        delete x.team;
         return x;
       })
       .toArray();
