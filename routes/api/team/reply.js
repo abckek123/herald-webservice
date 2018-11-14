@@ -1,7 +1,7 @@
 const _db=require('../../../database/mongodb')
 
 /**
- * /api/team/reply
+ * /api/team/reply 回复加入组队请求
  */
 exports.route = {
   async post({rid, text, response}) {

@@ -2,7 +2,7 @@ const crypto = require('crypto')
 const _db=require('../../../database/mongodb')
 
 /**
- * /api/team/registration
+ * /api/team/registration 申请加入队伍
  */
 exports.route = {
   async post({ tid }){
@@ -19,14 +19,14 @@ exports.route = {
     let targetTeam=await _col_team.findOne({tid});
     let currentPeople=targetTeam.currentPeople;
 
-    // if(targetTeam.cardnum===cardnum){
-    //   throw "请勿申请加入自己创建的队伍"
-    // }
-    
+    if(process.env.NODE_ENV==='production'&&targetTeam.cardnum===cardnum){
+      throw "请勿申请加入自己创建的队伍"
+    }
+
     if(currentPeople.length>=targetTeam.maxPeople){
       throw "队内人数已达上限";
     }
-    
+
     data.status=0;
     data.cardnum=cardnum;
     data.applicant=name;
