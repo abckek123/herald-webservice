@@ -191,7 +191,7 @@ exports.route = {
     let {cardnum}=this.user;
     let team = await _col_team.findOne({ tid });
     //开发环境下任何人均可作为管理员身份
-    let isAdmin=this.admin || this.admin.maintenance||process.env.NODE_ENV==='development';
+    let isAdmin=this.admin ||process.env.NODE_ENV==='development';
     if(!team){
       throw "找不到队伍";
     }
