@@ -185,16 +185,18 @@ exports.route = {
     }
   },
 
-  async delete({tid,hard}) {
+  async delete({tid,hard,msg}) {
     let _col_team=await _db('team');
     let _col_regis=await _db('registration');
     let {cardnum}=this.user;
     let team = await _col_team.findOne({ tid });
-
+    //开发环境下任何人均可作为管理员身份
+    let isAdmin=this.admin || this.admin.maintenance||process.env.NODE_ENV==='development';
     if(!team){
       throw "找不到队伍";
     }
-    if(cardnum!==team.cardnum){
+
+    if(cardnum!==team.cardnum || isAdmin){
       throw 403;
     }
     if(typeof(hard) !== "undefined"&&typeof(hard)!=="boolean"){
@@ -203,6 +205,9 @@ exports.route = {
     try{
       if(hard){
         await _col_team.removeOne({tid});
+      }
+      else if(isAdmin&&msg){
+        await _col_team.updateOne({tid},{$set:{status:5,msg:msg}});
       }
       else{
         await _col_team.updateOne({tid},{$set:{status:4}});

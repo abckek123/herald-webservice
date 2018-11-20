@@ -17,7 +17,7 @@ db.team = {
   deadLine:    'text not null',
   publishedDate:'text not null',
   description: 'text not null',
-  status:      'int not null' //0('normal'),1('out-of-date'),4('abandoned')
+  status:      'int not null' //0('normal'),1('out-of-date'),4('abandoned'),5('forbidden)
 }
 
 // 对更新时间进行索引
