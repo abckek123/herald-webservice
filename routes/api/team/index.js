@@ -19,9 +19,9 @@ exports.route = {
     if(type==1){
       let data=await _col_team
       .find({status:{$lt:4}})
+      .sort({'publishedDate':-1})
       .skip(offset)
       .limit(pageSize)
-      .sort({'publishedDate':-1})
       .map(x=>{delete x._id;return x;})
       .toArray();
       return {data};
@@ -32,9 +32,9 @@ exports.route = {
 
       let published=await _col_team
       .find({cardnum})
+      .sort({'publishedDate':-1})
       .skip(offset)
       .limit(pageSize)
-      .sort({'publishedDate':-1})
       .map(x=>{delete x._id;return x;})
       .toArray();
 
@@ -51,9 +51,9 @@ exports.route = {
          as:'team'}
       }
       ])
+      .sort({'applicationDate':-1})
       .skip(offset)
       .limit(pageSize)
-      .sort({'applicationDate':-1})
       .map(x=>{
         delete x._id;
         x.teamName=x.team[0]?x.team[0].teamName:'队伍不存在或已被删除';
@@ -78,9 +78,9 @@ exports.route = {
           as: 'team'
         }
       }])
+      .sort({'applicationDate':-1})
       .skip(offset)
       .limit(pageSize)
-      .sort({'applicationDate':-1})
       .map(x=>{
         delete x._id;
         x.teamName=x.team[0]?x.team[0].teamName:'队伍不存在或已被删除';
@@ -97,9 +97,9 @@ exports.route = {
       param.status={$lt:4};
       let data=await _col_team
       .find({status:{$lt:4},...param})
+      .sort({'publishedDate':-1})
       .skip(offset)
       .limit(pageSize)
-      .sort({'publishedDate':-1})
       .map(x=>{
         delete x._id;
         return x;
@@ -186,6 +186,7 @@ exports.route = {
   },
 
   async delete({tid,hard,msg}) {
+
     let _col_team=await _db('team');
     let _col_regis=await _db('registration');
     let {cardnum}=this.user;
@@ -195,13 +196,14 @@ exports.route = {
     if(!team){
       throw "找不到队伍";
     }
-
-    if(cardnum!==team.cardnum || isAdmin){
+    if(cardnum!==team.cardnum || !isAdmin){
       throw 403;
     }
-    if(typeof(hard) !== "undefined"&&typeof(hard)!=="boolean"){
+    if(!(hard&&typeof(hard)==='string')){
       throw '错误的请求参数';
     }
+    hard=hard==='true';
+
     try{
       if(hard){
         await _col_team.removeOne({tid});
