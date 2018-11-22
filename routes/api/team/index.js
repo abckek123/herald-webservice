@@ -33,8 +33,6 @@ exports.route = {
       let published=await _col_team
       .find({cardnum})
       .sort({'publishedDate':-1})
-      .skip(offset)
-      .limit(pageSize)
       .map(x=>{delete x._id;return x;})
       .toArray();
 
@@ -52,8 +50,6 @@ exports.route = {
       }
       ])
       .sort({'applicationDate':-1})
-      .skip(offset)
-      .limit(pageSize)
       .map(x=>{
         delete x._id;
         x.teamName=x.team[0]?x.team[0].teamName:'队伍不存在或已被删除';
@@ -79,8 +75,6 @@ exports.route = {
         }
       }])
       .sort({'applicationDate':-1})
-      .skip(offset)
-      .limit(pageSize)
       .map(x=>{
         delete x._id;
         x.teamName=x.team[0]?x.team[0].teamName:'队伍不存在或已被删除';
