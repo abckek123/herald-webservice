@@ -208,7 +208,7 @@ exports.route = {
       else{
         await _col_team.updateOne({tid},{$set:{status:4}});
       }
-      await _col_regis.updateMany({ tid ,status:{$lt:4}},{$set:{status:4}});
+      await _col_regis.updateMany({ tid ,status:{$lt:3}},{$set:{status:4}});
       return{ status: 0}
     }
     catch(e){

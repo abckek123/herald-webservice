@@ -77,6 +77,11 @@ exports.route = {
   },
 
   async delete({rid ,hard}) {
+    if(!(hard&&typeof(hard)==='string')){
+      throw '错误的请求参数';
+    }
+    hard=hard==='true';
+
     let _col_regis=await _db('registration');
 
     let {cardnum}=this.user;
@@ -94,10 +99,10 @@ exports.route = {
     }
 
     try{
-      if(hard==='true'){
+      if(hard){
         await _col_regis.removeOne({rid});
       }else{
-      await _col_regis.updateOne({rid},{$set:{status:4}});
+      await _col_regis.updateOne({rid},{$set:{status:3}});
       }
       return{status:0}
     }
