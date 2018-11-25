@@ -113,8 +113,9 @@ exports.route = {
 
     let count=await _col_team.countDocuments({cardnum,status:{$lt:4}});
     let currentTime=moment().unix();
-    data.deadLine=moment(data.deadLine,"YYYY-MM-DD").unix();
 
+    //数据预处理
+    data.deadLine=moment(data.deadLine,"YYYY-MM-DD").unix();
     if(isNaN(data.deadLine)){
       throw "错误的日期";
     }
@@ -138,8 +139,11 @@ exports.route = {
     data.publishedDate=currentTime;
     data.status=0;
 
-    if(Object.keys(data).length!=12)
+    if(Object.keys(data).length!=12){
       throw "错误的参数";
+    }
+
+    //数据库操作
     try{
       await _col_team.ensureIndex('tid',{unique:true});
       await _col_team.insertOne(data);
@@ -156,19 +160,21 @@ exports.route = {
     let _col_team=await _db('team');
 
     let data=this.params;
-
     let {cardnum}=this.user;
     let targetTeam=await _col_team.findOne({tid});
 
+    //数据预处理
     if(targetTeam.cardnum!==cardnum){
       throw 403;
     }
     if(targetTeam.currentPeople.length>data.maxPeople){
       throw '队内人数大于修改的目标值';
     }
-
     delete data.masterName;
     delete data.cardnum;
+
+
+    //数据库操作
     try{
       await _col_team.ensureIndex('tid',{unique:true});
       await _col_team.updateOne({tid},{$set:data});
@@ -190,13 +196,12 @@ exports.route = {
     if(!team){
       throw "找不到队伍";
     }
-    if(cardnum!==team.cardnum || !isAdmin){
+    if(cardnum!==team.cardnum && !isAdmin){
       throw 403;
     }
-    if(!(hard&&typeof(hard)==='string')){
+    if(!(hard&&typeof(hard)==='boolean')){
       throw '错误的请求参数';
     }
-    hard=hard==='true';
 
     try{
       if(hard){
