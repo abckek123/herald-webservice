@@ -19,7 +19,7 @@ exports.route = {
     if(type==1){
       let data=await _col_team
       .find({status:{$lt:4}})
-      .sort({'publishedDate':-1})
+      .hint('publishedDate_-1')
       .skip(offset)
       .limit(pageSize)
       .map(x=>{delete x._id;return x;})
@@ -32,7 +32,7 @@ exports.route = {
 
       let published=await _col_team
       .find({cardnum})
-      .sort({'publishedDate':-1})
+      .hint('publishedDate_-1')
       .map(x=>{delete x._id;return x;})
       .toArray();
 
@@ -49,7 +49,7 @@ exports.route = {
          as:'team'}
       }
       ])
-      .sort({'applicationDate':-1})
+      .hint('applicationDate_-1')
       .map(x=>{
         delete x._id;
         x.teamName=x.team[0]?x.team[0].teamName:'队伍不存在或已被删除';
@@ -74,7 +74,7 @@ exports.route = {
           as: 'team'
         }
       }])
-      .sort({'applicationDate':-1})
+      .hint('applicationDate_-1')
       .map(x=>{
         delete x._id;
         x.teamName=x.team[0]?x.team[0].teamName:'队伍不存在或已被删除';
@@ -91,7 +91,7 @@ exports.route = {
       param.status={$lt:4};
       let data=await _col_team
       .find({status:{$lt:4},...param})
-      .sort({'publishedDate':-1})
+      .hint('publishedDate_-1')
       .skip(offset)
       .limit(pageSize)
       .map(x=>{
