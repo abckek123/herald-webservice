@@ -199,9 +199,11 @@ exports.route = {
     if(cardnum!==team.cardnum && !isAdmin){
       throw 403;
     }
-    if(!(hard&&typeof(hard)==='boolean')){
+    if(!(hard&&typeof(hard)==='string')){
       throw '错误的请求参数';
     }
+    hard=hard==='true';
+
 
     try{
       if(hard){

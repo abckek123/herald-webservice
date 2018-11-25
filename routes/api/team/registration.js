@@ -77,9 +77,11 @@ exports.route = {
   },
 
   async delete({rid ,hard}) {
-    if(!(hard&&typeof(hard)==='boolean')){
+    if(!(hard&&typeof(hard)==='string')){
       throw '错误的请求参数';
     }
+    hard=hard==='true';
+
 
     let _col_regis=await _db('registration');
 
