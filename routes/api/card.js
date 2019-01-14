@@ -1,5 +1,7 @@
 const cheerio = require('cheerio')
 
+const delayPool = {} // 消抖用，防止操作过于频繁
+
 exports.route = {
 
   /**
@@ -141,28 +143,56 @@ exports.route = {
   * @apiParam eacc       为真值时充值到电子钱包
   **/
   async put({ cardnum, password, amount, eacc }) {
-    cardnum || ({ cardnum, name } = this.user)
+    throw '由于上游接口故障，一卡通充值暂不开放，敬请谅解'
+    
+    cardnum || ({ cardnum, name, token } = this.user)
+    amount = parseFloat(amount)
 
-    let res = await this.post('http://58.192.115.47:8088/wechat-web/login/dologin.html', {
-      cardno: cardnum, pwd: password
+    if (isNaN(amount) || amount <= 0 || amount > 1000) {
+      throw '金额输入超限或格式不正确'
+    }
+
+    // 通过密码检验接口获取一卡通六位数账号
+    let res = await this.post('http://yktwechat.seu.edu.cn/wechat/callinterface/checkPwd.html', {
+      sno: cardnum,
+      xxbh: 'synjones',
+      idtype: 'sno',
+      id: cardnum,
+      pwd: password
     })
 
-    if (/账户密码错误/.test(res.data)) {
-      throw '密码错误，请重试'
+    // 密码检验失败抛出异常
+    if (parseInt(res.data.retcode) === 60005) {
+      return '密码错误，请重试'
     }
 
-    let cardid = /&sum=(\d{6})"/.exec(res.data)[1]
-    res = await this.get(
-      'http://58.192.115.47:8088/WechatEcardInterfaces/wechatweb/chongzhi.html?jsoncallback=' +
-      `&value=${amount},${password}&cardno=${cardid}&acctype=${eacc ? '000' : '1'}`
-    )
-
-    let msg = JSON.parse(/callJson\s*\(\s*(\{[\s\S]*\})\s*\)/im.exec(res.data)[1]).errmsg.replace(/转账/g, '充值')
-    if (/成功/.test(msg)) {
-      this.logMsg = `${name} (${cardnum}) - 一卡通充值成功`
-      return msg
+    // 密码校验通过，消抖
+    let now = +moment()
+    if (delayPool[cardnum] && now - delayPool[cardnum] < 3 * 60 * 1000) {
+      throw '受财务处接口限制，3分钟内只能操作一次'
     } else {
-      throw msg
+      delayPool[cardnum] = now
     }
+
+    // 从密码检验结果中拿到六位账号进行充值
+    let { account } = res.data
+    res = await this.post('http://yktwechat.seu.edu.cn/wechat/callinterface/transfer.html', {
+      sno: cardnum,
+      xxbh: 'synjones',
+      account,
+      tranamt: Math.round(amount * 100), // 这里的金额以分为单位
+      acctype: eacc ? '000' : '###'
+    })
+
+    // 解析结果
+    let msg = res.data.errmsg.replace(/转账/g, '充值')
+
+    // 无论成功失败都 200，这样 PWA 可以显示错误信息
+    if (parseInt(res.data.retcode) === 0) {
+      this.logMsg = `${name} (${cardnum}) - 一卡通充值成功`
+    } else {
+      this.logMsg = `${name} (${cardnum}) - 一卡通充值失败`
+    }
+    return msg
   }
 }
