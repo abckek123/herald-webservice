@@ -26,16 +26,84 @@ exports.route = {
   * 注意本科生和研究生返回结果格式略有不同
   **/
   async get() {
-    return await this.userCache('1h+', async () => {
-
-      // 先检查可用性，不可用直接抛异常或取缓存
-      this.guard('http://xk.urp.seu.edu.cn/studentService/system/showLogin.action')
-
-      await this.useAuthCookie()
+    return await this.userCache('10m+', async () => {
+      
       let { name, cardnum, schoolnum } = this.user
 
+      if(/^21318/.test(cardnum)) {
+        await this.useEHallAuth('4768574631264620')
+        let rawData = await this.post('http://ehall.seu.edu.cn/jwapp/sys/cjcx/modules/cjcx/xscjcx.do',
+        {querySetting: [],
+        '*order': '-XNXQDM,KCH,KXH',
+        pageSize: 1000,
+        pageNumber: 1})
+        rawData = rawData.data.datas.xscjcx.rows
+        let detail = rawData.map(k=>{
+          let semesterName = k.XNXQDM.split('-')
+          semesterName = `${semesterName[0].slice(2)}-${semesterName[1].slice(2)}-${semesterName[2]}`
+          return{
+            semester:semesterName,
+            cid:k.XSKCH,
+            courseName:k.XSKCM,
+            courseType:k.KCXZDM_DISPLAY==='必修'?'':k.KCXZDM_DISPLAY,
+            credit:k.XF,
+            score:k.ZCJ,
+            equivalentScore:calculateEquivalentScore(k.ZCJ),
+            isPassed:k.ZCJ>=60,
+            isFirstPassed: false,
+            isHighestPassed: false,
+            scoreType:k.CXCKDM_DISPLAY === '初修' ? '首修':k.CXCKDM_DISPLAY
+          }
+        })
+
+        let courseHasPassed = {}
+        let achievedCredits = 0
+        detail.slice().reverse().map(k => {
+          // 赋值后判断如果是首次通过
+          if ((k.isFirstPassed = k.isPassed && !courseHasPassed[k.cid])) {
+            courseHasPassed[k.cid] = true
+            
+            // 更新已获得学分数
+            achievedCredits += k.credit
+          }
+        })
+
+        // 计算各门课程是否最高一次通过
+        // 用于前端判断课程是否默认计入出国绩点估算
+        let courseHighestPassed = {}
+        detail.map(k => {
+          if (k.isPassed && (!courseHighestPassed[k.cid] || k.equivalentScore > courseHighestPassed[k.cid].equivalentScore)) {
+            courseHighestPassed[k.cid] = k
+          }
+        })
+        Object.values(courseHighestPassed).map(k => k.isHighestPassed = true)
+        
+        // 按学期分组
+        detail = detail.reduce((a, b) => {
+          let semester = b.semester
+          delete b.semester
+          if (!a.length || a.slice(-1)[0].semester !== semester) {
+            return a.concat([{ semester, courses: [b] }])
+          } else {
+            a.slice(-1)[0].courses.push(b)
+            return a
+          }
+        }, [])
+
+        let gpa = null
+        let calculationTime = null
+        let gpaBeforeMakeup = null
+        let year = null
+        // 时间解析为时间戳
+        //calculationTime = calculationTime ? +moment(calculationTime) : null
+        this.logMsg = `${name} (${cardnum}) - 查询绩点`
+        return { gpa, gpaBeforeMakeup, achievedCredits, year, calculationTime, detail }
+
+        /*>>赵拯基超可爱<<*/
+      }
       // 本科生
       if (/^21/.test(cardnum)) {
+        await this.useAuthCookie()
         res = await this.get(
           'http://xk.urp.seu.edu.cn/studentService/cs/stuServe/studentExamResultQuery.action'
         )
@@ -161,6 +229,9 @@ exports.route = {
         // 时间解析为时间戳
         calculationTime = calculationTime ? +moment(calculationTime) : null
         this.logMsg = `${name} (${cardnum}) - 查询绩点`
+        if(detail.length === 0) {
+          throw '教务处数据出错'
+        }
         return { gpa, gpaBeforeMakeup, achievedCredits, year, calculationTime, detail }
 
       } else if (/^22/.test(cardnum)) { // 研究生
@@ -199,7 +270,7 @@ exports.route = {
         let required = parseFloat($('#lblyxxf1').text()) // 应修总学分
         let credits = { degree, optional, total, required }
 
-        return { score, credits, detail }
+        return { graduated:true, score, credits, detail }
       }
     })
   }

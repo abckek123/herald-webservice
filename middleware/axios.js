@@ -18,7 +18,9 @@ const axios = require('axios')
 const { config } = require('../app')
 const axiosCookieJarSupport = require('axios-cookiejar-support').default
 const tough = require('tough-cookie')
-const chardet = require('chardet')
+const chardet = require('jschardet-eastasia')
+chardet.Constants.MINIMUM_THRESHOLD = 0
+
 const iconv = require('iconv')
 const qs = require('querystring')
 axiosCookieJarSupport(axios)
@@ -66,13 +68,13 @@ module.exports = async (ctx, next) => {
     // 自动检测返回内容编码
     responseType: 'arraybuffer',
     transformResponse(res) {
-      let encoding = chardet.detect(res);
+      let { encoding } = chardet.detect(res);
       if (encoding === 'windows-1250' || encoding === 'windows-1252') {
         // 验证码类型，不做处理
         return res
       } else { // 若 chardet 返回 null，表示不是一个已知编码的字符串，就当做二进制，不做处理
         try {
-        res = new iconv.Iconv(encoding, 'UTF-8//TRANSLIT//IGNORE').convert(res).toString();
+          res = new iconv.Iconv(encoding, 'UTF-8//TRANSLIT//IGNORE').convert(res).toString()
         try { res = JSON.parse(res) } catch (e) {}
         } catch(e) {
           return res
@@ -85,8 +87,8 @@ module.exports = async (ctx, next) => {
   })
 
   ;['get','post','put','delete'].forEach(k => {
-    ctx[k] = async function () {
-      if (config.spider.enable){
+    ctx[k] = async (...args) => {
+      if (config.spider.enable) {
         let transformRequest = (req) => {
           if (typeof req === 'object') {
             return qs.stringify(req)
@@ -94,27 +96,27 @@ module.exports = async (ctx, next) => {
           return req
         };
         let transformResponse = (res) => {
-          let encoding = chardet.detect(res);
+          let { encoding } = chardet.detect(res);
           if (encoding === 'windows-1250' || encoding === 'windows-1252') {
             // 验证码类型，不做处理
             return res
           } else { // 若 chardet 返回 null，表示不是一个已知编码的字符串，就当做二进制，不做处理
             try {
               res = new iconv.Iconv(encoding, 'UTF-8//TRANSLIT//IGNORE').convert(res).toString();
-              try { res = JSON.parse(res) } catch (e) {}
-            } catch(e) {
+              try { res = JSON.parse(res) } catch (e) { }
+            } catch (e) {
               return res
             }
           }
           return res
         };
         try {
-          return await ctx.spiderServer.request(ctx, k, arguments, config.axios, transformRequest, transformResponse)
+          return await ctx.spiderServer.request(ctx, k, args, config.axios, transformRequest, transformResponse)
         } catch (e) {
-          return await _axios[k].apply(undefined, arguments)
+          return await _axios[k](...args)
         }
       } else {
-        return await _axios[k].apply(undefined, arguments)
+        return await _axios[k](...args)
       }
     }
   });
