@@ -1,47 +1,54 @@
 const crypto = require('crypto')
-const _db=require('../../../database/mongodb')
+const db=require('../../../database/team')
 
 /**
  * /api/team/registration 申请加入队伍
  */
 exports.route = {
   async post({ tid }){
-    let _col_team=await _db('team');
-    let _col_regis=await _db('registration');
+    let teamView=await db('userTeamView');
+    let regisView=await db('userRegisView');
 
     let data=this.params;
     let {cardnum,name}=this.user;
 
-    let findRegis=await _col_regis.findOne({tid,cardnum,status:{$in:[0,1]}});
+    let findRegis=await regisView.findOne({tid,cardnum,status:{$in:[0,1]}});
     if(findRegis){
       throw "不可重复申请";
     }
-    let targetTeam=await _col_team.findOne({tid});
+    let targetTeam=await teamView.findOne({tid});
     let currentPeople=targetTeam.currentPeople;
 
     if(process.env.NODE_ENV==='production'&&targetTeam.cardnum===cardnum){
       throw "请勿申请加入自己创建的队伍"
     }
-
     if(currentPeople.length>=targetTeam.maxPeople){
       throw "队内人数已达上限";
     }
 
-    data.status=0;
-    data.cardnum=cardnum;
-    data.applicant=name;
-    data.applicationDate=data.updateDate=moment().unix();
-    data.rid = crypto.createHash('sha256')
+    const currentTime=moment().unix();
+    const rid = crypto.createHash('sha256')
                     .update( tid )
-                    .update( `${data.updateDate}` )
+                    .update( `${currentTime}` )
                     .update( cardnum )
                     .digest( 'hex' );
 
-    if(Object.keys(data).length!=9)
-      throw "错误的参数";
+    let _data={
+      rid,
+      tid:data.tid,
+      applicantNameName:name,
+      QQ:data.QQ,
+      description:data.description,
+      requestTime:currentTime,
+      updateTime:currentTime,
+      cardnum,
+      status:0
+    }
+
+    //数据库操作
     try{
-      await _col_regis.ensureIndex('rid',{unique:true});
-      await _col_regis.insertOne(data);
+      let regis=await db('registration');  
+      await regis.insertOne(_data);
       return {status:0};
     }
     catch(e){
@@ -52,22 +59,20 @@ exports.route = {
   },
 
   async put({rid}){
-    let _col_regis=await _db('registration');
+    let regisView=await db('userRegisView');
 
     let data=this.params;
-
     let {cardnum}=this.user;
-
-    let target=await _col_regis.findOne({rid});
-
+    let target=await regisView.findOne({rid});
     if(target.cardnum!==cardnum){
       throw 403;
     }
     try{
       delete data.tid;
-      delete data.applicant;
+      delete data.applicantName;
       delete data.cardnum;
-      await _col_regis.updateMany({rid},{$set:data});
+      let regis=await db('registration');
+      await regis.updateMany({rid},{$set:data});
       return {status:0};
     }
     catch(e){
@@ -82,11 +87,9 @@ exports.route = {
     }
     hard=hard==='true';
 
-
-    let _col_regis=await _db('registration');
-
+    let regisView=await db('userRegisView');
     let {cardnum}=this.user;
-    let regis = await _col_regis.findOne({ rid });
+    let regis = await regisView.findOne({ rid });
 
     if(!regis){
       throw "找不到申请";
@@ -100,10 +103,11 @@ exports.route = {
     }
 
     try{
+      let regis=await db('registration');
       if(hard){
-        await _col_regis.removeOne({rid});
+        await regis.removeOne({rid});
       }else{
-      await _col_regis.updateOne({rid},{$set:{status:3}});
+      await regis.updateOne({rid},{$set:{status:3}});
       }
       return{status:0}
     }

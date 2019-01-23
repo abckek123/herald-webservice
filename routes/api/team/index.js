@@ -1,28 +1,26 @@
-const crypto = require('crypto')
-const _db=require('../../../database/mongodb')
-
-
+const crypto = require('crypto');
+const db=require('../../../database/team');
 /**
  * /api/team 竞赛组队API
+ *   
  */
+
 exports.route = {
   async get({type,page=1,param}){
-    let _col_team=await _db('team');
-    let _col_regis=await _db('registration');
-
     if(page<=0)
       throw "错误的页码";
 
     let pageSize=6;
     let offset=(page-1)*pageSize;
+    let teamView=db.getCollection('userTeamView');
+    let regisView=db.getCollection('userRegisView');
 
     if(type==1){
-      let data=await _col_team
+      let data=await teamView
       .find({status:{$lt:4}})
-      .hint('publishedDate_-1')
+      .hint('publishTime_-1')
       .skip(offset)
       .limit(pageSize)
-      .map(x=>{delete x._id;return x;})
       .toArray();
       return {data};
 
@@ -30,28 +28,24 @@ exports.route = {
 
       let {cardnum}=this.user;
 
-      let published=await _col_team
+      let published=await teamView
       .find({cardnum})
-      .hint('publishedDate_-1')
-      .map(x=>{delete x._id;return x;})
+      .hint('publishTime_-1')
       .toArray();
 
-      let requested=await _col_regis
+      let requested=await regisView
       .aggregate([{
-        $match: {
-          cardnum
-        }
+        $match: {cardnum}
        },{
        $lookup:{
-         from:"team",
+         from:"userTeamView",
          localField:'tid',
          foreignField:'tid',
          as:'team'}
       }
       ])
-      .hint('applicationDate_-1')
+      .hint('updateTime_-1')
       .map(x=>{
-        delete x._id;
         x.teamName=x.team[0]?x.team[0].teamName:'队伍不存在或已被删除';
         x.projectName=x.team[0]?x.team[0].projectName:'队伍不存在或已被删除';
         delete x.team;
@@ -60,7 +54,7 @@ exports.route = {
       .toArray();
 
       let tids=published.map(eachColume=>eachColume.tid);
-      let received=await _col_regis
+      let received=await regisView
       .aggregate([{
         $match:{
           status:{$lt:4},
@@ -68,15 +62,14 @@ exports.route = {
         }
       },{
         $lookup: {
-          from: "team",
+          from: "userTeamView",
           localField: 'tid',
           foreignField: 'tid',
           as: 'team'
         }
       }])
-      .hint('applicationDate_-1')
+      .hint('updateTime_-1')
       .map(x=>{
-        delete x._id;
         x.teamName=x.team[0]?x.team[0].teamName:'队伍不存在或已被删除';
         x.projectName=x.team[0]?x.team[0].projectName:'队伍不存在或已被删除';
         delete x.team;
@@ -89,15 +82,11 @@ exports.route = {
     }else if(type==3){
       param=JSON.parse(param);
       param.status={$lt:4};
-      let data=await _col_team
+      let data=await teamView
       .find({status:{$lt:4},...param})
-      .hint('publishedDate_-1')
+      .hint('publishTime_-1')
       .skip(offset)
       .limit(pageSize)
-      .map(x=>{
-        delete x._id;
-        return x;
-      })
       .toArray();
       return {data};
     }
@@ -109,61 +98,62 @@ exports.route = {
   async post(){
     let data=this.params;
     let {name,cardnum}=this.user;
-    let _col_team=await _db('team');
-
-    let count=await _col_team.countDocuments({cardnum,status:{$lt:4}});
+    
+    let teamView=db.getCollection('userTeamView');
+    let count=await teamView.countDocuments({cardnum,status:{$lt:4}});
     let currentTime=moment().unix();
-
-    //数据预处理
-    data.deadLine=moment(data.deadLine,"YYYY-MM-DD").unix();
-    if(isNaN(data.deadLine)){
+    //数据格式合法性判断
+    if(isNaN(data.endTime)||isNaN(data.publishTime)){
       throw "错误的日期";
     }
-    if(data.deadLine<currentTime){
+    if(data.endTime<currentTime){
       throw "截止日期需超过今日";
     }
     if(count==2){
       throw '同时可发布数已达上限(两个)';
     }
 
-    data.tid = crypto.createHash('sha256')
+    let tid = crypto.createHash('sha256')
                     .update( data.teamName )
                     .update( data.projectName )
-                    .update( `${data.deadLine}` )
+                    .update( `${data.endTime}` )
                     .update( cardnum )
                     .digest( 'hex' );
 
-    data.masterName=name;
-    data.currentPeople=[{cardnum,name}];
-    data.cardnum=cardnum;
-    data.publishedDate=currentTime;
-    data.status=0;
-
-    if(Object.keys(data).length!=12){
-      throw "错误的参数";
+    let _data={
+      tid:tid,
+      teamName:data.teamName,
+      projectName:data.projectName,
+      masterName:name,
+      cardnum:cardnum,
+      QQ:data.QQ,
+      currentPeople:[{cardnum,name}],
+      maxPeople:data.maxPeople,
+      publishTime,currentTime,
+      endTime:data.endTime,
+      status:0,
+      deleteReason:null
     }
-
     //数据库操作
     try{
-      await _col_team.ensureIndex('tid',{unique:true});
-      await _col_team.insertOne(data);
+      let team=db.getCollection('team');
+      await team.insertOne(_data);
       return {status:0}
     }
     catch(e){
       if(e.code==11000)
         return {status:1};
-      throw '数据库错误';
+      throw '操作失败';
     }
   },
 
   async put({tid}){
-    let _col_team=await _db('team');
-
     let data=this.params;
     let {cardnum}=this.user;
-    let targetTeam=await _col_team.findOne({tid});
+    let teamView=db.getCollection('userTeamView');
+    let targetTeam=await teamView.findOne({tid});
 
-    //数据预处理
+    //数据格式合法性判断
     if(targetTeam.cardnum!==cardnum){
       throw 403;
     }
@@ -176,21 +166,21 @@ exports.route = {
 
     //数据库操作
     try{
-      await _col_team.ensureIndex('tid',{unique:true});
-      await _col_team.updateOne({tid},{$set:data});
+      let team=db.getCollection('team');  
+      await team.updateOne({tid},{$set:data});
       return {status:0}
     }
     catch(e){
-      throw '数据库错误';
+      throw '操作失败';
     }
   },
 
   async delete({tid,hard,msg}) {
 
-    let _col_team=await _db('team');
-    let _col_regis=await _db('registration');
     let {cardnum}=this.user;
-    let team = await _col_team.findOne({ tid });
+    let teamView=db.getCollection('userTeamView');
+    let regisView=db.getCollection('userRegisView');
+    let team = await teamView.findOne({ tid });
     //开发环境下任何人均可作为管理员身份
     let isAdmin=this.admin ||process.env.NODE_ENV==='development';
     if(!team){
@@ -204,22 +194,36 @@ exports.route = {
     }
     hard=hard==='true';
 
-
+    //开启事务
+    let client=await db.getClient();
+    let session=client.startSession();
+    session.startTransaction();
     try{
+      let team=db.getCollection('team');
+      let regis=db.getCollection('registration');  
       if(hard){
-        await _col_team.removeOne({tid});
+        await team.removeOne({tid});
       }
       else if(isAdmin&&msg){
-        await _col_team.updateOne({tid},{$set:{status:5,msg:msg}});
+        //管理员删除
+        await team.updateOne({tid},{$set:{status:5,deleteReason:msg}});
       }
       else{
-        await _col_team.updateOne({tid},{$set:{status:4}});
+        //用户删除
+        await team.updateOne({tid},{$set:{status:4}});
       }
-      await _col_regis.updateMany({ tid ,status:{$lt:3}},{$set:{status:4}});
+      //更新此队伍的申请
+      await regis.updateMany({ tid ,status:{$lt:3}},{$set:{status:4}});
+
+      //提交事务
+      session.commitTransaction();
+      session.endSession();
       return{ status: 0}
     }
     catch(e){
-      throw "数据库错误";
+      session.abortTransaction();
+      session.endSession();
+      throw "操作失败";
     }
   }
 }

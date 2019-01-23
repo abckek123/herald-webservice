@@ -102,8 +102,6 @@ if (process.env.NODE_ENV === 'production') {
     python: '/usr/local/bin/anaconda3/envs/captcha/bin/python'
   }))
 }
-//11.竞赛组队数据预处理中间件
-app.use(require('./middleware/team'));
 
 /**
   ## F. 路由层

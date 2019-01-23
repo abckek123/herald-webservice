@@ -1,41 +1,93 @@
-/**
- * 竞赛组队数据库
- */
+const MongoClient = require('mongodb').MongoClient;
+const assert = require('assert');
+const config = require('./mongodb-secret.json')
 
-const db = require('sqlongo')('team')
+const user = encodeURIComponent(config.user);
+const password = encodeURIComponent(config.pwd);
+const authMechanism = 'DEFAULT';
 
-// 队伍信息 (11项，tid,currentPeople,publishedDate为生成项)
-db.team = {
-  tid:         'text primary key not null', // 团队唯一id
-  masterName:  'text not null',
-  cardnum:   'text not null',
-  qq:          'text not null',
-  teamName:    'text not null',
-  projectName: 'text not null',
-  currentPeople:'text not null',
-  maxPeople:   'int not null',
-  deadLine:    'text not null',
-  publishedDate:'text not null',
-  description: 'text not null',
-  status:      'int not null' //0('normal'),1('out-of-date'),4('abandoned'),5('forbidden)
+// Connection URL
+const url = `mongodb://${user}:${password}@${config.host}:${config.port}/webservice?authMechanism=${authMechanism}`
+let mongodb = null;
+let mongoClient=null;
+
+const getCollection = async(col) => {
+  if (mongodb) {
+    return mongodb.collection(col)
+  } else {
+    mongoClient = await MongoClient.connect(url, { useNewUrlParser: true })
+    mongodb = mongoClient.db("webservice")
+    return mongodb.collection(col)
+  }
 }
-
-// 对更新时间进行索引
-//db`create index if not exists teamIndex on team(updateTime)`
-
-// 报名信息  （10项）
-db.registration = {
-  rid:         'text primary key not null', // 报名唯一id
-  tid:         'text not null',             // 报名的队伍id
-  //teamName:    'text not null',             // 队伍名称
-  applicant:    'text not null',             // 报名人姓名
-  cardnum:     'text not null',           // 报名人学号
-  qq:           'text not null',
-  description: 'text not null',             // 报名人简述理由
-  applicationDate:'text not null',          // 请求发布日期
-  status:      'int not null',      // 状态 0('pending'),1('accepted'),2('rejected'),3('canceled'),4('abandoned')
-  updateDate:   'int not null',             // 更新日期，
-  responseText:'text'               // 目标队伍队长回应信息
+const getMongoClient=async ()=>{
+  if (mongoClient) {
+    return mongoClient
+  } else {
+    mongoClient = await MongoClient.connect(url, { useNewUrlParser: true })
+    mongodb = mongoClient.db("webservice")
+    return mongoClient
+  }
 }
+//初始化竞赛组队数据库
+(async ()=>{
+  const col_team=await getCollection('team');
+  const col_regis=await getCollection('registration');
+  
+  //按照发布时间/申请更新时间 作为索引
+  await col_team.createIndex({publishTime:-1});
+  await col_team.createIndex('tid',{unique:true});
+  await col_regis.createIndex({updateTime:-1});
+  await col_regis.createIndex('rid',{unique:true});
 
-module.exports = db
+  //创建组队项用户视图
+  await mongodb.command({
+    create:'userTeamView',
+    viewOn:'team',
+    pipeline:[{
+      $project:{
+        _id:0,
+        tid:1,
+        teamName:1,
+        projectName:1,
+        masterName:1,
+        QQ:1,
+        currentPeople:1,
+        maxPeople:1,
+        description:1,
+        publishTime:1,
+        updateTime:1,//保留
+        endTime:1,
+        status:1,
+        deleteReason:1
+      }
+    }]
+  }).catch(err=>console.log(err.message))
+
+  //创建申请项用户视图
+  await mongodb.command({
+    create:'userRegisView',
+    viewOn:'registration',
+    pipeline:[{
+      $project:{
+        _id:0,
+        rid:1,
+        tid:1,
+        applicantName:1,
+        QQ:1,
+        description:1,
+        requestTime:1,
+        updateTime:1,
+        cardnum:1,
+        status:1,
+        responseText:1
+      }
+    }]
+  }).catch(err=>console.log(err.message))
+
+})();
+
+module.exports = {
+  getCollection,
+  getMongoClient
+}

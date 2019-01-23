@@ -1,40 +1,63 @@
-const _db=require('../../../database/mongodb')
+const db=require('../../../database/team')
 
 /**
  * /api/team/reply 回复加入组队请求
  */
 exports.route = {
   async post({rid, text, response}) {
-    let _col_team=await _db('team');
-    let _col_regis=await _db('registration');
+    let teamView=await db.getCollection('userTeamView');
+    let regisView=await db.getCollection('userRegisView');
 
     if(typeof(response)!=="boolean"){
       throw '错误的请求值';
     }
 
-    let targetRegis = await _col_regis.findOne({ rid});
-    if (targetRegis.status != 0) {
-      throw "回复失败";
+    let targetRegis = await regisView.findOne({ rid});
+    switch(targetRegis.status){
+      case 0:break;
+      case 1:throw '请求已被同意';
+      case 2:throw '请求已被拒接';
+      case 3:throw '对方请求已取消';
+      case 4:throw '对方请求已失效';
+      default: throw '未知的参数"status"'
     }
-    let targetTeam = await _col_team.findOne({ tid: targetRegis.tid});
+    
+    let targetTeam = await teamView.findOne({ tid: targetRegis.tid});
     let currentPeople = targetTeam.currentPeople;
+    if (currentPeople.length >= targetTeam.maxPeople) {
+      throw "队内人数已达上限";
+    }
 
+    //创建事务
+    let client=await db.getClient();
+    let session=client.startSession();
+    session.startTransaction();
     try {
+      let team=await db.getCollection('team');
+      let regis=await db.getCollection('registration');  
       let status;
       if (response) {
-        if (currentPeople.length >= targetTeam.maxPeople) {
-          throw "队内人数已达上限";
-        }
         currentPeople.push({cardnum:targetRegis.cardnum,name:targetRegis.applicant});
-        await _col_team.updateOne({tid: targetRegis.tid}, {$set:{currentPeople}});
+        await team.updateOne({tid: targetRegis.tid}, {$set:{currentPeople}});
         status=1;
       } else{
         status = 2;
       }
-      await _col_regis.updateMany({rid}, {$set:{status,updateTime: moment().unix(),responseText: text}});
+      await regis.updateMany(
+        {rid}, 
+        {$set:{
+          status,updateTime: moment().unix(),
+          responseText: text
+        }});
+      //提交事务
+      session.commitTransaction();
+      session.endSession();
       return {status: 0}
 
     } catch (e) {
+      //回滚事务
+      session.abortTransaction();
+      session.endSession();
       throw "数据库错误"
     }
   }
