@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 const db=require('../../../database/team');
+const moment=require('moment')
+
 /**
  * /api/team 竞赛组队API
  *   
@@ -12,8 +14,8 @@ exports.route = {
 
     let pageSize=6;
     let offset=(page-1)*pageSize;
-    let teamView=db.getCollection('userTeamView');
-    let regisView=db.getCollection('userRegisView');
+    let teamView=await db.getCollection('userTeamView');
+    let regisView=await db.getCollection('userRegisView');
 
     if(type==1){
       let data=await teamView
@@ -81,7 +83,6 @@ exports.route = {
 
     }else if(type==3){
       param=JSON.parse(param);
-      param.status={$lt:4};
       let data=await teamView
       .find({status:{$lt:4},...param})
       .hint('publishTime_-1')
@@ -99,11 +100,11 @@ exports.route = {
     let data=this.params;
     let {name,cardnum}=this.user;
     
-    let teamView=db.getCollection('userTeamView');
+    let teamView=await db.getCollection('userTeamView');
     let count=await teamView.countDocuments({cardnum,status:{$lt:4}});
     let currentTime=moment().unix();
     //数据格式合法性判断
-    if(isNaN(data.endTime)||isNaN(data.publishTime)){
+    if(data.endTime.length!==10){
       throw "错误的日期";
     }
     if(data.endTime<currentTime){
@@ -129,14 +130,14 @@ exports.route = {
       QQ:data.QQ,
       currentPeople:[{cardnum,name}],
       maxPeople:data.maxPeople,
-      publishTime,currentTime,
+      publishTime:currentTime,
       endTime:data.endTime,
       status:0,
       deleteReason:null
     }
     //数据库操作
     try{
-      let team=db.getCollection('team');
+      let team=await db.getCollection('team');
       await team.insertOne(_data);
       return {status:0}
     }
@@ -150,7 +151,7 @@ exports.route = {
   async put({tid}){
     let data=this.params;
     let {cardnum}=this.user;
-    let teamView=db.getCollection('userTeamView');
+    let teamView=await db.getCollection('userTeamView');
     let targetTeam=await teamView.findOne({tid});
 
     //数据格式合法性判断
@@ -166,7 +167,7 @@ exports.route = {
 
     //数据库操作
     try{
-      let team=db.getCollection('team');  
+      let team=await db.getCollection('team');  
       await team.updateOne({tid},{$set:data});
       return {status:0}
     }
@@ -178,8 +179,7 @@ exports.route = {
   async delete({tid,hard,msg}) {
 
     let {cardnum}=this.user;
-    let teamView=db.getCollection('userTeamView');
-    let regisView=db.getCollection('userRegisView');
+    let teamView=await db.getCollection('userTeamView');
     let team = await teamView.findOne({ tid });
     //开发环境下任何人均可作为管理员身份
     let isAdmin=this.admin ||process.env.NODE_ENV==='development';
@@ -189,18 +189,15 @@ exports.route = {
     if(cardnum!==team.cardnum && !isAdmin){
       throw 403;
     }
-    if(!(hard&&typeof(hard)==='string')){
-      throw '错误的请求参数';
-    }
     hard=hard==='true';
 
     //开启事务
-    let client=await db.getClient();
+    let client=await db.getMongoClient();
     let session=client.startSession();
     session.startTransaction();
     try{
-      let team=db.getCollection('team');
-      let regis=db.getCollection('registration');  
+      let team=await db.getCollection('team');
+      let regis=await db.getCollection('registration');  
       if(hard){
         await team.removeOne({tid});
       }

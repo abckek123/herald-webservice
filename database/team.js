@@ -41,48 +41,51 @@ const getMongoClient=async ()=>{
   await col_regis.createIndex('rid',{unique:true});
 
   //创建组队项用户视图
+  if((await mongodb.collections()).find(each=>each.collectionName=='userTeamView')){
+    await mongodb.dropCollection('userTeamView')
+  }
   await mongodb.command({
     create:'userTeamView',
     viewOn:'team',
-    pipeline:[{
-      $project:{
-        _id:0,
-        tid:1,
-        teamName:1,
-        projectName:1,
-        masterName:1,
-        QQ:1,
-        currentPeople:1,
-        maxPeople:1,
-        description:1,
-        publishTime:1,
-        updateTime:1,//保留
-        endTime:1,
-        status:1,
-        deleteReason:1
-      }
-    }]
+    pipeline:[{$project:{
+      _id:0,
+      tid:1,
+      masterName:1,
+      cardnum:1,
+      teamName:1,
+      projectName:1,
+      QQ:1,
+      currentPeople:1,
+      maxPeople:1,
+      description:1,
+      publishTime:1,
+      updateTime:1,//保留
+      endTime:1,
+      status:1,
+      deleteReason:1
+    }}]
   }).catch(err=>console.log(err.message))
 
   //创建申请项用户视图
+  if((await mongodb.collections()).find(each=>each.collectionName=='userRegisView')){
+    await mongodb.dropCollection('userRegisView')
+  }
   await mongodb.command({
     create:'userRegisView',
     viewOn:'registration',
-    pipeline:[{
-      $project:{
-        _id:0,
-        rid:1,
-        tid:1,
-        applicantName:1,
-        QQ:1,
-        description:1,
-        requestTime:1,
-        updateTime:1,
-        cardnum:1,
-        status:1,
-        responseText:1
-      }
-    }]
+    pipeline:[{$project:{
+      _id:0,
+      rid:1,
+      tid:1,
+      applicantName:1,
+      QQ:1,
+      description:1,
+      requestTime:1,
+      updateTime:1,
+      cardnum:1,
+      status:1,
+      responseText:1
+    }}]
   }).catch(err=>console.log(err.message))
 
 })();

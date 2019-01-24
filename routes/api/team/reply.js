@@ -1,4 +1,5 @@
 const db=require('../../../database/team')
+const moment=require('moment')
 
 /**
  * /api/team/reply 回复加入组队请求
@@ -8,9 +9,7 @@ exports.route = {
     let teamView=await db.getCollection('userTeamView');
     let regisView=await db.getCollection('userRegisView');
 
-    if(typeof(response)!=="boolean"){
-      throw '错误的请求值';
-    }
+    response=response==='true';
 
     let targetRegis = await regisView.findOne({ rid});
     switch(targetRegis.status){
@@ -29,7 +28,7 @@ exports.route = {
     }
 
     //创建事务
-    let client=await db.getClient();
+    let client=await db.getMongoClient();
     let session=client.startSession();
     session.startTransaction();
     try {
@@ -37,7 +36,7 @@ exports.route = {
       let regis=await db.getCollection('registration');  
       let status;
       if (response) {
-        currentPeople.push({cardnum:targetRegis.cardnum,name:targetRegis.applicant});
+        currentPeople.push({cardnum:targetRegis.cardnum,name:targetRegis.applicantName});
         await team.updateOne({tid: targetRegis.tid}, {$set:{currentPeople}});
         status=1;
       } else{

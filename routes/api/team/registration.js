@@ -1,13 +1,14 @@
 const crypto = require('crypto')
 const db=require('../../../database/team')
+const moment=require('moment')
 
 /**
  * /api/team/registration 申请加入队伍
  */
 exports.route = {
   async post({ tid }){
-    let teamView=await db('userTeamView');
-    let regisView=await db('userRegisView');
+    let teamView=await db.getCollection('userTeamView');
+    let regisView=await db.getCollection('userRegisView');
 
     let data=this.params;
     let {cardnum,name}=this.user;
@@ -36,7 +37,7 @@ exports.route = {
     let _data={
       rid,
       tid:data.tid,
-      applicantNameName:name,
+      applicantName:name,
       QQ:data.QQ,
       description:data.description,
       requestTime:currentTime,
@@ -47,7 +48,7 @@ exports.route = {
 
     //数据库操作
     try{
-      let regis=await db('registration');  
+      let regis=await db.getCollection('registration');  
       await regis.insertOne(_data);
       return {status:0};
     }
@@ -59,7 +60,7 @@ exports.route = {
   },
 
   async put({rid}){
-    let regisView=await db('userRegisView');
+    let regisView=await db.getCollection('userRegisView');
 
     let data=this.params;
     let {cardnum}=this.user;
@@ -67,11 +68,16 @@ exports.route = {
     if(target.cardnum!==cardnum){
       throw 403;
     }
+    if(target.status!==0){
+      throw "无法修改";
+    }
+
+    data.updateTime=moment().unix();
     try{
       delete data.tid;
       delete data.applicantName;
       delete data.cardnum;
-      let regis=await db('registration');
+      let regis=await db.getCollection('registration');
       await regis.updateMany({rid},{$set:data});
       return {status:0};
     }
@@ -82,12 +88,9 @@ exports.route = {
   },
 
   async delete({rid ,hard}) {
-    if(!(hard&&typeof(hard)==='string')){
-      throw '错误的请求参数';
-    }
     hard=hard==='true';
 
-    let regisView=await db('userRegisView');
+    let regisView=await db.getCollection('userRegisView');
     let {cardnum}=this.user;
     let regis = await regisView.findOne({ rid });
 
@@ -103,11 +106,11 @@ exports.route = {
     }
 
     try{
-      let regis=await db('registration');
+      let regis=await db.getCollection('registration');
       if(hard){
         await regis.removeOne({rid});
       }else{
-      await regis.updateOne({rid},{$set:{status:3}});
+        await regis.updateOne({rid},{$set:{status:3}});
       }
       return{status:0}
     }
