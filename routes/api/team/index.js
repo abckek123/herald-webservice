@@ -126,6 +126,7 @@ exports.route = {
       teamName:data.teamName,
       projectName:data.projectName,
       masterName:name,
+      description:data.description,
       cardnum:cardnum,
       QQ:data.QQ,
       currentPeople:[{cardnum,name}],
